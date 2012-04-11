@@ -56,7 +56,7 @@ describe "Schema definition" do
       it "should render to XML using options hash" do
         @schema.define do
           cube 'Sales', :default_measure => 'Unit Sales',
-            :description => 'Sales cube', :cache => false, :enabled => true
+          :description => 'Sales cube', :cache => false, :enabled => true
         end
         @schema.to_xml.should be_like <<-XML
         <?xml version="1.0"?>
@@ -248,7 +248,7 @@ describe "Schema definition" do
           cube 'Sales' do
             dimension 'Products', :foreign_key => 'product_id' do
               hierarchy :has_all => true, :all_member_name => 'All Products',
-                        :primary_key => 'product_id', :primary_key_table => 'product' do
+              :primary_key => 'product_id', :primary_key_table => 'product' do
                 join :left_key => 'product_class_id', :right_key => 'product_class_id' do
                   table 'product'
                   table 'product_class'
@@ -285,7 +285,7 @@ describe "Schema definition" do
           cube 'Sales' do
             dimension 'Products', :foreign_key => 'product_id' do
               hierarchy :has_all => true, :all_member_name => 'All Products',
-                        :primary_key => 'product_id', :primary_key_table => 'product' do
+              :primary_key => 'product_id', :primary_key_table => 'product' do
                 join :left_key => 'product_class_id', :right_key => 'product_class_id' do
                   table 'product'
                   table 'product_class'
@@ -322,7 +322,7 @@ describe "Schema definition" do
           cube 'Sales' do
             dimension 'Products', :foreign_key => 'product_id' do
               hierarchy :has_all => true, :all_member_name => 'All Products',
-                        :primary_key => 'product_id', :primary_key_table => 'product' do
+              :primary_key => 'product_id', :primary_key_table => 'product' do
                 join :left_key => 'product_class_id', :right_alias => 'product_class', :right_key => 'product_class_id' do
                   table 'product'
                   join :left_key  => 'product_type_id', :right_key => 'product_type_id' do
@@ -361,7 +361,6 @@ describe "Schema definition" do
         </Schema>
         XML
       end
-
     end
 
     describe "Measure" do
@@ -607,7 +606,7 @@ describe "Schema definition" do
               hierarchy :has_all => true, :all_member_name => 'All Employees', :primary_key => 'employee_id' do
                 table 'employee'
                 level 'Employee Id', :unique_members => true, :type => 'Numeric', :column => 'employee_id', :name_column => 'full_name',
-                                      :parent_column => 'supervisor_id', :null_parent_value => 0 do
+                :parent_column => 'supervisor_id', :null_parent_value => 0 do
                   property 'Marital Status', :column => 'marital_status'
                   property 'Position Title', :column => 'position_title'
                   property 'Gender', :column => 'gender'
@@ -631,6 +630,45 @@ describe "Schema definition" do
                   <Property column="gender" name="Gender"/>
                   <Property column="salary" name="Salary"/>
                   <Property column="education_level" name="Education Level"/>
+                </Level>
+              </Hierarchy>
+            </Dimension>
+          </Cube>
+        </Schema>
+        XML
+      end
+    end
+
+    describe "Parent-Child relationship" do
+      it "should render parent expression element to XML" do
+        @schema.define do
+          cube 'Sales' do
+            dimension 'Employees', :foreign_key => 'employee_id' do
+              hierarchy :has_all => true, :all_member_name => 'All Employees', :primary_key => 'employee_id' do
+                table 'employee'
+                level 'Employee Id', :unique_members => true, :type => 'Numeric', :column => 'employee_id', :name_column => 'full_name' do
+
+                  parent_expression do
+                    sql 'supervisor_id'
+                  end
+                end
+              end
+            end
+          end
+        end
+
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0"?>
+        <Schema name="default">
+
+          <Cube name="Sales">
+            <Dimension foreignKey="employee_id" name="Employees">
+              <Hierarchy allMemberName="All Employees" hasAll="true" primaryKey="employee_id">
+                <Table name="employee"/>
+                <Level column="employee_id" name="Employee Id" nameColumn="full_name" type="Numeric" uniqueMembers="true">
+                  <ParentExpression>
+                    <SQL>supervisor_id</SQL>
+                  </ParentExpression>
                 </Level>
               </Hierarchy>
             </Dimension>
@@ -870,7 +908,7 @@ describe "Schema definition" do
         end
       end
     end
-
+    
     describe "User defined functions and formatters in Ruby" do
       before(:each) do
         @schema.define do
@@ -1129,6 +1167,8 @@ describe "Schema definition" do
 
     end
   end
+
+  
 
   describe "connection with schema" do
     before(:all) do
