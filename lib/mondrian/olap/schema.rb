@@ -50,7 +50,8 @@ module Mondrian
       public
 
       attributes :name, :description
-      elements :cube, :user_defined_function
+      elements :cube, :user_defined_function, :dimension
+
 
       class Cube < SchemaElement
         attributes :name, :description,
@@ -61,7 +62,7 @@ module Mondrian
           :cache,
           # Whether element is enabled - if true, then the Cube is realized otherwise it is ignored.
           :enabled
-        elements :table, :view, :dimension, :measure, :calculated_member
+        elements :table, :view, :dimension, :measure, :calculated_member, :dimension_usage
       end
 
       class Table < SchemaElement
@@ -80,7 +81,7 @@ module Mondrian
         # Defines a "table" using SQL query which can have different variants for different underlying databases
         elements :sql
       end
-
+      
       class Dimension < SchemaElement
         attributes :name, :description,
           # The dimension's type may be one of "Standard" or "Time".
@@ -93,6 +94,10 @@ module Mondrian
           :foreign_key
         data_dictionary_names :foreign_key # values in XML will be uppercased when using Oracle driver
         elements :hierarchy
+      end
+
+      class DimensionUsage < Dimension
+        attributes :source
       end
 
       class Hierarchy < SchemaElement

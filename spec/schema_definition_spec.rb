@@ -67,6 +67,51 @@ describe "Schema definition" do
       end
     end
 
+    describe "Shared Dimensions" do
+      it "should render shared dimensions definition to XML" do
+        @schema.define do
+          cube 'Sales' do
+            dimension 'Users' do
+              hierarchy :has_all => true, :all_member_name => 'All Users', :primary_key => 'id' do
+                table 'users'
+                level 'User Id', :column => 'id', :unique_members => true
+              end
+            end
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0"?>
+        <Schema name="default">
+          <Cube name="Sales">
+            <Dimension name="Users">
+              <Hierarchy allMemberName="All Users" hasAll="true" primaryKey="id">
+                <Table name="users"/>
+                <Level column="id" name="User Id" uniqueMembers="true"/>
+              </Hierarchy>
+            </Dimension>
+          </Cube>
+        </Schema>
+        XML
+      end
+
+      it "should render dimension usage to XML" do
+        @schema.define do
+          cube 'Sales' do
+            dimension_usage 'Customers', :source => 'Users', :foreign_key => 'customer_id'
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0"?>
+        <Schema name="default">
+          <Cube name="Sales">
+            <DimensionUsage foreignKey="customer_id" name="Customers" source="Users"/>
+          </Cube>
+        </Schema>
+        XML
+      end
+    end
+  
+
     describe "Table" do
       it "should render to XML" do
         @schema.define do
