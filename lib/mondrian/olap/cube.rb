@@ -61,6 +61,10 @@ module Mondrian
         @name ||= @raw_dimension.getName
       end
 
+      def caption
+        @raw_dimension.getCaption
+      end
+            
       def description
         @description ||= @raw_dimension.getDescription
       end
@@ -169,6 +173,10 @@ module Mondrian
         @name ||= @raw_level.getName
       end
 
+      def caption
+        @raw_level.getCaption
+      end
+
       def description
         @description ||= @raw_level.getDescription
       end
@@ -193,6 +201,14 @@ module Mondrian
 
       def members
         @raw_level.getMembers.map{|m| Member.new(m)}
+      end
+
+      def level_type
+        @raw_level.level_type.name
+      end
+
+      def all?
+        level_type == "ALL"
       end
     end
 
