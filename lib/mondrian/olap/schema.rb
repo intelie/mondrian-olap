@@ -16,7 +16,7 @@ module Mondrian
         new(name || 'default', attributes, &block)
       end
 
-      def define(name = nil, attributes = {}, &block)
+      def cdefine(name = nil, attributes = {}, &block)
         name, attributes = self.class.pre_process_arguments(name, attributes)
         pre_process_attributes(attributes)
         @attributes[:name] = name || @attributes[:name] || 'default' # otherwise connection with empty name fails
@@ -120,13 +120,13 @@ module Mondrian
           # that all members have entirely unique rows, allowing SQL GROUP BY clauses to be completely eliminated from the query.
           :unique_key_level_name
         data_dictionary_names :primary_key, :primary_key_table # values in XML will be uppercased when using Oracle driver
-        elements :table, :join, :property, :level
+        elements :table, :view, :join, :property, :level
       end
 
       class Join < SchemaElement
         attributes :left_key, :right_key, :left_alias, :right_alias
         data_dictionary_names :left_key, :right_key, :left_alias, :right_alias # values in XML will be uppercased when using Oracle driver
-        elements :table, :join
+        elements :table, :join, :view
       end
 
       class Level < SchemaElement
