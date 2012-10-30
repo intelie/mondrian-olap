@@ -16,7 +16,7 @@ module Mondrian
         new(name || 'default', attributes, &block)
       end
 
-      def cdefine(name = nil, attributes = {}, &block)
+      def define(name = nil, attributes = {}, &block)
         name, attributes = self.class.pre_process_arguments(name, attributes)
         pre_process_attributes(attributes)
         @attributes[:name] = name || @attributes[:name] || 'default' # otherwise connection with empty name fails
