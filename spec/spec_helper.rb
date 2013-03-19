@@ -9,8 +9,8 @@ require 'active_record'
 require 'pry'
 
 DATABASE_HOST     = ENV['DATABASE_HOST']     || 'localhost'
-DATABASE_USER     = ENV['DATABASE_USER']     || 'mondrian_test'
-DATABASE_PASSWORD = ENV['DATABASE_PASSWORD'] || 'mondrian_test'
+DATABASE_USER     = ENV['DATABASE_USER']     || 'root'
+DATABASE_PASSWORD = ENV['DATABASE_PASSWORD'] || ''
 DATABASE_NAME     = ENV['DATABASE_NAME']     || 'mondrian_test'
 DATABASE_INSTANCE = ENV['DATABASE_INSTANCE']
 MONDRIAN_DRIVER   = ENV['MONDRIAN_DRIVER']   || 'mysql'
@@ -18,6 +18,7 @@ MONDRIAN_DRIVER   = ENV['MONDRIAN_DRIVER']   || 'mysql'
 case MONDRIAN_DRIVER
 when 'mysql'
   require 'jdbc/mysql'
+  Jdbc::MySQL.load_driver(:require) if Jdbc::MySQL.respond_to?(:load_driver)
   JDBC_DRIVER = 'com.mysql.jdbc.Driver'
 when 'postgresql'
   require 'jdbc/postgres'

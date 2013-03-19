@@ -82,7 +82,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Dimension name="Users">
@@ -103,7 +103,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <DimensionUsage foreignKey="customer_id" name="Customers" source="Users"/>
@@ -731,7 +731,7 @@ describe "Schema definition" do
         end
 
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
 
           <Cube name="Sales">
