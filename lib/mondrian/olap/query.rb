@@ -209,7 +209,9 @@ module Mondrian
       end
 
       def execute
-        @connection.execute to_mdx
+        Error.wrap_native_exception do
+          @connection.execute to_mdx
+        end
       end
 
       private

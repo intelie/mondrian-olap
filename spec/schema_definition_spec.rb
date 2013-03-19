@@ -110,7 +110,7 @@ describe "Schema definition" do
         XML
       end
     end
-  
+
 
     describe "Table" do
       it "should render to XML" do
@@ -953,7 +953,7 @@ describe "Schema definition" do
         end
       end
     end
-    
+
     describe "User defined functions and formatters in Ruby" do
       before(:each) do
         @schema.define do
@@ -1211,9 +1211,45 @@ describe "Schema definition" do
       end
 
     end
+
+    describe "Roles" do
+      it "should render XML" do
+        @schema.define do
+          role 'California manager' do
+            schema_grant :access => 'none' do
+              cube_grant :cube => 'Sales', :access => 'all' do
+                dimension_grant :dimension => '[Measures]', :access => 'all'
+                hierarchy_grant :hierarchy => '[Customers]', :access => 'custom',
+                                :top_level => '[Customers].[State Province]', :bottom_level => '[Customers].[City]' do
+                  member_grant :member => '[Customers].[USA].[CA]', :access => 'all'
+                  member_grant :member => '[Customers].[USA].[CA].[Los Angeles]', :access => 'none'
+                end
+              end
+            end
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0"?>
+        <Schema name="default">
+          <Role name="California manager">
+            <SchemaGrant access="none">
+              <CubeGrant access="all" cube="Sales">
+                <DimensionGrant access="all" dimension="[Measures]"/>
+                <HierarchyGrant access="custom" bottomLevel="[Customers].[City]" hierarchy="[Customers]" topLevel="[Customers].[State Province]">
+                  <MemberGrant access="all" member="[Customers].[USA].[CA]"/>
+                  <MemberGrant access="none" member="[Customers].[USA].[CA].[Los Angeles]"/>
+                </HierarchyGrant>
+              </CubeGrant>
+            </SchemaGrant>
+          </Role>
+        </Schema>
+        XML
+      end
+    end
+
   end
 
-  
+
 
   describe "connection with schema" do
     before(:all) do
@@ -1255,4 +1291,43 @@ describe "Schema definition" do
 
   end
 
+  describe "errors" do
+    before(:each) do
+      @schema = Mondrian::OLAP::Schema.new
+    end
+
+    it "should raise error when invalid schema" do
+      @schema.define do
+        cube 'Sales' do
+        end
+      end
+      expect {
+        Mondrian::OLAP::Connection.create(CONNECTION_PARAMS.merge :schema => @schema)
+      }.to raise_error {|e|
+        e.should be_kind_of(Mondrian::OLAP::Error)
+        e.message.should == "mondrian.olap.MondrianException: Mondrian Error:Internal error: Must specify fact table of cube 'Sales'"
+        e.root_cause_message.should == "Internal error: Must specify fact table of cube 'Sales'"
+      }
+    end
+
+    it "should raise error when invalid calculated member formula" do
+      @schema.define do
+        cube 'Sales' do
+          table 'sales'
+          calculated_member 'Dummy' do
+            dimension 'Measures'
+            formula 'Dummy(123)'
+          end
+        end
+      end
+      expect {
+        Mondrian::OLAP::Connection.create(CONNECTION_PARAMS.merge :schema => @schema)
+      }.to raise_error {|e|
+        e.should be_kind_of(Mondrian::OLAP::Error)
+        e.message.should == "mondrian.olap.MondrianException: Mondrian Error:Named set in cube 'Sales' has bad formula"
+        e.root_cause_message.should == "No function matches signature 'Dummy(<Numeric Expression>)'"
+      }
+    end
+
+  end
 end
