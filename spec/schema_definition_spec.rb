@@ -1,3 +1,5 @@
+# encoding: utf-8
+
 require "spec_helper"
 require "coffee-script"
 
@@ -11,25 +13,25 @@ describe "Schema definition" do
     describe "root element" do
       it "should render to XML" do
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema/>
         XML
       end
 
       it "should render to XML with attributes" do
         @schema.define('FoodMart') do
-          description 'Demo "FoodMart" schema'
+          description 'Demo "FoodMart" schema āčē'
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
-        <Schema description="Demo &quot;FoodMart&quot; schema" name="FoodMart"/>
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Schema description="Demo &quot;FoodMart&quot; schema āčē" name="FoodMart"/>
         XML
       end
 
       it "should render to XML using class method" do
         schema = Mondrian::OLAP::Schema.define('FoodMart')
         schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="FoodMart"/>
         XML
       end
@@ -46,7 +48,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube cache="false" defaultMeasure="Unit Sales" description="Sales cube" enabled="true" name="Sales"/>
         </Schema>
@@ -59,7 +61,7 @@ describe "Schema definition" do
           :description => 'Sales cube', :cache => false, :enabled => true
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube cache="false" defaultMeasure="Unit Sales" description="Sales cube" enabled="true" name="Sales"/>
         </Schema>
@@ -120,7 +122,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Table alias="sales" name="sales_fact"/>
@@ -137,7 +139,7 @@ describe "Schema definition" do
         end
         %w(oracle luciddb).each do |driver|
           @schema.to_xml(:driver => driver).should be_like <<-XML
-          <?xml version="1.0"?>
+          <?xml version="1.0" encoding="UTF-8"?>
           <Schema name="default">
             <Cube name="Sales">
               <Table alias="SALES" name="SALES_FACT" schema="FACTS"/>
@@ -154,7 +156,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Table alias="SALES" name="SALES_FACT" schema="FACTS"/>
@@ -171,7 +173,7 @@ describe "Schema definition" do
         end
         %w(oracle luciddb).each do |driver|
           @schema.to_xml(:driver => driver).should be_like <<-XML
-          <?xml version="1.0"?>
+          <?xml version="1.0" encoding="UTF-8"?>
           <Schema name="default">
             <Cube name="Sales">
               <Table alias="sales" name="sales_fact" schema="facts"/>
@@ -190,7 +192,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Table alias="sales" name="sales_fact">
@@ -212,7 +214,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <View alias="sales">
@@ -241,7 +243,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Dimension foreignKey="customer_id" name="Gender">
@@ -272,7 +274,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Dimension foreignKey="time_id" name="Time">
@@ -306,7 +308,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Dimension foreignKey="product_id" name="Products">
@@ -343,7 +345,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml(:driver => 'oracle').should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Dimension foreignKey="PRODUCT_ID" name="Products">
@@ -384,7 +386,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Dimension foreignKey="product_id" name="Products">
@@ -419,7 +421,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Measure aggregator="sum" column="unit_sales" name="Unit Sales"/>
@@ -438,7 +440,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml(:driver => 'oracle').should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Measure aggregator="sum" column="UNIT_SALES" name="Unit Sales"/>
@@ -458,7 +460,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Measure aggregator="sum" name="Double Unit Sales">
@@ -484,9 +486,35 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
+            <CalculatedMember dimension="Measures" formatString="#,##0.00" name="Profit">
+              <Formula>[Measures].[Store Sales] - [Measures].[Store Cost]</Formula>
+            </CalculatedMember>
+          </Cube>
+        </Schema>
+        XML
+      end
+
+      it "should render embedded cube XML defintion before additional calculated member to XML" do
+        @schema.define do
+          cube 'Sales' do
+            xml <<-XML
+              <Table name="sales_fact_1997"/>
+            XML
+            calculated_member 'Profit' do
+              dimension 'Measures'
+              formula '[Measures].[Store Sales] - [Measures].[Store Cost]'
+              format_string '#,##0.00'
+            end
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Schema name="default">
+          <Cube name="Sales">
+            <Table name="sales_fact_1997"/>
             <CalculatedMember dimension="Measures" formatString="#,##0.00" name="Profit">
               <Formula>[Measures].[Store Sales] - [Measures].[Store Cost]</Formula>
             </CalculatedMember>
@@ -515,7 +543,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Table name="sales_fact_1997">
@@ -555,7 +583,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Table name="sales_fact_1997">
@@ -609,7 +637,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Table name="sales_fact_1997">
@@ -663,7 +691,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Dimension foreignKey="employee_id" name="Employees">
@@ -781,7 +809,7 @@ describe "Schema definition" do
 
       it "should render XML" do
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Table name="sales"/>
@@ -1183,7 +1211,7 @@ describe "Schema definition" do
 
       it "should render XML" do
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Cube name="Sales">
             <Table name="sales"/>
@@ -1229,7 +1257,7 @@ describe "Schema definition" do
           end
         end
         @schema.to_xml.should be_like <<-XML
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <Schema name="default">
           <Role name="California manager">
             <SchemaGrant access="none">
