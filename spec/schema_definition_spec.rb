@@ -1,7 +1,6 @@
 # encoding: utf-8
 
 require "spec_helper"
-require "coffee-script"
 
 describe "Schema definition" do
 
@@ -290,6 +289,39 @@ describe "Schema definition" do
         XML
       end
 
+      it "should render dimension with hierarchy and level defaults" do
+        @schema.define do
+          cube 'Sales' do
+            dimension 'Time' do
+              foreign_key 'time_id'
+              hierarchy do
+                all_member_name 'All Times' # should add :has_all => true
+                primary_key 'time_id'
+                table 'time_by_day'
+                level 'Year', :column => 'the_year', :type => 'Numeric' # first level should have default :unique_members => true
+                level 'Quarter', :column => 'quarter' # next levels should have default :unique_members => false
+                level 'Month', :column => 'month_of_year', :type => 'Numeric'
+              end
+            end
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Schema name="default">
+          <Cube name="Sales">
+            <Dimension foreignKey="time_id" name="Time">
+              <Hierarchy allMemberName="All Times" hasAll="true" primaryKey="time_id">
+                <Table name="time_by_day"/>
+                <Level column="the_year" name="Year" type="Numeric" uniqueMembers="true"/>
+                <Level column="quarter" name="Quarter" uniqueMembers="false"/>
+                <Level column="month_of_year" name="Month" type="Numeric" uniqueMembers="false"/>
+              </Hierarchy>
+            </Dimension>
+          </Cube>
+        </Schema>
+        XML
+      end
+
       it "should render dimension hierarchy with join" do
         @schema.define do
           cube 'Sales' do
@@ -410,6 +442,68 @@ describe "Schema definition" do
       end
     end
 
+    describe "Shared dimension" do
+      it "should render to XML" do
+        @schema.define do
+          dimension 'Gender' do
+            hierarchy do
+              has_all true
+              all_member_name 'All Genders'
+              primary_key 'customer_id'
+              table 'customer'
+              level 'Gender', :column => 'gender', :unique_members => true
+            end
+          end
+          cube 'Sales' do
+            dimension_usage 'Gender', :foreign_key => 'customer_id' # by default :source => 'Gender' will be added
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Schema name="default">
+          <Dimension name="Gender">
+            <Hierarchy allMemberName="All Genders" hasAll="true" primaryKey="customer_id">
+              <Table name="customer"/>
+              <Level column="gender" name="Gender" uniqueMembers="true"/>
+            </Hierarchy>
+          </Dimension>
+          <Cube name="Sales">
+            <DimensionUsage foreignKey="customer_id" name="Gender" source="Gender"/>
+          </Cube>
+        </Schema>
+        XML
+      end
+    end
+
+    describe "Virtual cube" do
+      it "should render to XML" do
+        @schema.define do
+          virtual_cube 'Warehouse and Sales', :default_measure => 'Store Sales' do
+            virtual_cube_dimension 'Customers', :cube_name => 'Sales'
+            virtual_cube_dimension 'Product'
+            virtual_cube_measure '[Measures].[Store Sales]', :cube_name => 'Sales'
+            calculated_member 'Profit' do
+              dimension 'Measures'
+              formula '[Measures].[Store Sales] - [Measures].[Store Cost]'
+            end
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Schema name="default">
+          <VirtualCube defaultMeasure="Store Sales" name="Warehouse and Sales">
+            <VirtualCubeDimension cubeName="Sales" name="Customers"/>
+            <VirtualCubeDimension name="Product"/>
+            <VirtualCubeMeasure cubeName="Sales" name="[Measures].[Store Sales]"/>
+            <CalculatedMember dimension="Measures" name="Profit">
+              <Formula>[Measures].[Store Sales] - [Measures].[Store Cost]</Formula>
+            </CalculatedMember>
+          </VirtualCube>
+        </Schema>
+        XML
+      end
+    end
+
     describe "Measure" do
       it "should render XML" do
         @schema.define do
@@ -418,6 +512,7 @@ describe "Schema definition" do
               column 'unit_sales'
               aggregator 'sum'
             end
+            measure 'Store Sales', :column => 'store_sales' # by default should use sum aggregator
           end
         end
         @schema.to_xml.should be_like <<-XML
@@ -425,6 +520,7 @@ describe "Schema definition" do
         <Schema name="default">
           <Cube name="Sales">
             <Measure aggregator="sum" column="unit_sales" name="Unit Sales"/>
+            <Measure aggregator="sum" column="store_sales" name="Store Sales"/>
           </Cube>
         </Schema>
         XML
@@ -491,6 +587,27 @@ describe "Schema definition" do
           <Cube name="Sales">
             <CalculatedMember dimension="Measures" formatString="#,##0.00" name="Profit">
               <Formula>[Measures].[Store Sales] - [Measures].[Store Cost]</Formula>
+            </CalculatedMember>
+          </Cube>
+        </Schema>
+        XML
+      end
+
+      it "should render XML with dimension and hierarchy" do
+        @schema.define do
+          cube 'Sales' do
+            calculated_member 'Current week' do
+              hierarchy '[Time.Weekly]'
+              formula '[Time.Weekly].[Week].CurrentDateMember'
+            end
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Schema name="default">
+          <Cube name="Sales">
+            <CalculatedMember hierarchy="[Time.Weekly]" name="Current week">
+              <Formula>[Time.Weekly].[Week].CurrentDateMember</Formula>
             </CalculatedMember>
           </Cube>
         </Schema>
@@ -751,6 +868,66 @@ describe "Schema definition" do
       end
     end
 
+    describe "Element annotations" do
+      it "should render XML from block of elements" do
+        @schema.define do
+          cube 'Sales' do
+            annotations do
+              annotation 'key1', 'value1'
+              annotation 'key2', 'value2'
+            end
+            measure 'Unit Sales', :column => 'unit_sales' do
+              annotations do
+                annotation 'key3', 'value3'
+              end
+            end
+          end
+        end
+
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Schema name="default">
+          <Cube name="Sales">
+            <Annotations>
+              <Annotation name="key1">value1</Annotation>
+              <Annotation name="key2">value2</Annotation>
+            </Annotations>
+            <Measure aggregator="sum" column="unit_sales" name="Unit Sales">
+              <Annotations>
+                <Annotation name="key3">value3</Annotation>
+              </Annotations>
+            </Measure>
+          </Cube>
+        </Schema>
+        XML
+      end
+
+      it "should render XML from hash options" do
+        @schema.define do
+          cube 'Sales' do
+            annotations :key1 => 'value1', :key2 => 'value2'
+            measure 'Unit Sales', :column => 'unit_sales', :annotations => {:key3 => 'value3'}
+          end
+        end
+        @schema.to_xml.should be_like <<-XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Schema name="default">
+          <Cube name="Sales">
+            <Annotations>
+              <Annotation name="key1">value1</Annotation>
+              <Annotation name="key2">value2</Annotation>
+            </Annotations>
+            <Measure aggregator="sum" column="unit_sales" name="Unit Sales">
+              <Annotations>
+                <Annotation name="key3">value3</Annotation>
+              </Annotations>
+            </Measure>
+          </Cube>
+        </Schema>
+        XML
+      end
+    end
+
     describe "User defined functions and formatters in JavaScript" do
       before(:each) do
         @schema.define do
@@ -816,7 +993,7 @@ describe "Schema definition" do
             <Dimension foreignKey="customer_id" name="Customers">
               <Hierarchy allMemberName="All Customers" hasAll="true" primaryKey="id">
                 <Table name="customers"/>
-                <Level column="fullname" name="Name">
+                <Level column="fullname" name="Name" uniqueMembers="true">
                   <MemberFormatter>
                     <Script language="JavaScript">return member.getName().toUpperCase();</Script>
                   </MemberFormatter>
@@ -1187,6 +1364,11 @@ describe "Schema definition" do
               end
             end
           end
+          user_defined_cell_formatter 'Integer20Digits' do
+            ruby :shared do |value|
+              "%020d" % value
+            end
+          end
         end
 
         @schema.define do
@@ -1200,9 +1382,11 @@ describe "Schema definition" do
                 level 'Name', :column => 'fullname'
               end
             end
+            measure 'Unit Sales', :column => 'unit_sales', :aggregator => 'sum', :format_string => '#,##0'
             calculated_member 'Factorial' do
               dimension 'Measures'
               formula 'Factorial(6)'
+              cell_formatter 'Integer20Digits'
             end
           end
         end
@@ -1218,11 +1402,13 @@ describe "Schema definition" do
             <Dimension foreignKey="customer_id" name="Customers">
               <Hierarchy allMemberName="All Customers" hasAll="true" primaryKey="id">
                 <Table name="customers"/>
-                <Level column="fullname" name="Name"/>
+                <Level column="fullname" name="Name" uniqueMembers="true"/>
               </Hierarchy>
             </Dimension>
+            <Measure aggregator="sum" column="unit_sales" formatString="#,##0" name="Unit Sales"/>
             <CalculatedMember dimension="Measures" name="Factorial">
               <Formula>Factorial(6)</Formula>
+              <CellFormatter className="rubyobj.Mondrian.OLAP.Schema.CellFormatter.Integer20DigitsUdf"/>
             </CalculatedMember>
           </Cube>
           <UserDefinedFunction className="rubyobj.Mondrian.OLAP.Schema.UserDefinedFunction.FactorialUdf" name="Factorial"/>
@@ -1236,6 +1422,23 @@ describe "Schema definition" do
         result = @olap.from('Sales').columns('[Measures].[Factorial]').execute
         value = 1*2*3*4*5*6
         result.values.should == [value]
+        result.formatted_values.should == ["%020d" % value]
+      end
+
+      it "should get measure cell formatter name" do
+        @olap.cube('Sales').member('[Measures].[Factorial]').cell_formatter_name.should == 'Integer20Digits'
+      end
+
+      it "should not get measure cell formatter name if not specified" do
+        @olap.cube('Sales').member('[Measures].[Unit Sales]').cell_formatter_name.should be_nil
+      end
+
+      it "should get measure format string" do
+        @olap.cube('Sales').member('[Measures].[Unit Sales]').format_string.should == '#,##0'
+      end
+
+      it "should not get measure format string if not specified" do
+        @olap.cube('Sales').member('[Measures].[Factorial]').format_string.should be_nil
       end
 
     end

@@ -1,9 +1,7 @@
-require 'nokogiri'
-
 module Mondrian
   module OLAP
     class SchemaElement
-      def initialize(name = nil, attributes = {}, &block)
+      def initialize(name = nil, attributes = {}, parent = nil, &block)
         # if just attributes hash provided
         if name.is_a?(Hash) && attributes == {}
           attributes = name
@@ -12,7 +10,14 @@ module Mondrian
         @attributes = {}
         if name
           if self.class.content
-            @content = name
+            if attributes.is_a?(Hash)
+              @content = name
+            else
+              # used for Annotation element where both name and content is given as arguments
+              @attributes[:name] = name
+              @content = attributes
+              attributes = {}
+            end
           else
             @attributes[:name] = name
           end
@@ -20,6 +25,10 @@ module Mondrian
         @attributes.merge!(attributes)
         self.class.elements.each do |element|
           instance_variable_set("@#{pluralize(element)}", [])
+        end
+        # extract annotations from options
+        if @attributes[:annotations] && self.class.elements.include?(:annotations)
+          annotations @attributes.delete(:annotations)
         end
         @xml_fragments = []
         instance_eval(&block) if block
@@ -58,7 +67,7 @@ module Mondrian
           attr_reader pluralize(name).to_sym
           class_eval <<-RUBY, __FILE__, __LINE__ + 1
             def #{name}(name=nil, attributes = {}, &block)
-              @#{pluralize(name)} << Schema::#{camel_case(name)}.new(name, attributes, &block)
+              @#{pluralize(name)} << Schema::#{camel_case(name)}.new(name, attributes, self, &block)
             end
           RUBY
         end

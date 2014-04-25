@@ -70,6 +70,13 @@ module Mondrian
         end
       end
 
+      def execute_drill_through(query_string)
+        Error.wrap_native_exception do
+          statement = @raw_connection.createStatement
+          Result::DrillThrough.new(statement.executeQuery(query_string))
+        end
+      end
+
       def from(cube_name)
         Query.from(self, cube_name)
       end
@@ -99,7 +106,9 @@ module Mondrian
       end
 
       def role_names
-        @raw_connection.getRoleNames.to_a
+        # workaround to access non-public method (was not public when using inside Torquebox)
+        # @raw_connection.getRoleNames.to_a
+        @raw_connection.java_method(:getRoleNames).call.to_a
       end
 
       def role_name=(name)
@@ -110,8 +119,83 @@ module Mondrian
 
       def role_names=(names)
         Error.wrap_native_exception do
-          @raw_connection.setRoleNames(Array(names))
+          # workaround to access non-public method (was not public when using inside Torquebox)
+          # @raw_connection.setRoleNames(Array(names))
+          @raw_connection.java_method(:setRoleNames, [Java::JavaUtil::List.java_class]).call(Array(names))
         end
+      end
+
+      def locale
+        @raw_connection.getLocale.toString
+      end
+
+      def locale=(locale)
+        locale_elements = locale.to_s.split('_')
+        raise ArgumentError, "invalid locale string #{locale.inspect}" unless [1,2,3].include?(locale_elements.length)
+        java_locale = Java::JavaUtil::Locale.new(*locale_elements)
+        @raw_connection.setLocale(java_locale)
+      end
+
+      # access MondrianServer instance
+      def mondrian_server
+        Error.wrap_native_exception do
+          @raw_connection.getMondrianConnection.getServer
+        end
+      end
+
+      # Force shutdown of static MondrianServer, should not normally be used.
+      # Can be used in at_exit block if JRuby based plugin is unloaded from other Java application.
+      # WARNING: Mondrian will be unusable after calling this method!
+      def self.shutdown_static_mondrian_server!
+        static_mondrian_server = Java::MondrianOlap::MondrianServer.forId(nil)
+
+        # force Mondrian to think that static_mondrian_server is not static MondrianServer
+        mondrian_server_registry = Java::MondrianServer::MondrianServerRegistry::INSTANCE
+        f = mondrian_server_registry.java_class.declared_field("staticServer")
+        f.accessible = true
+        f.set_value(mondrian_server_registry, nil)
+
+        static_mondrian_server.shutdown
+
+        # shut down expiring reference timer thread
+        f = Java::MondrianUtil::ExpiringReference.java_class.declared_field("timer")
+        f.accessible = true
+        expiring_reference_timer = f.static_value.to_java
+        expiring_reference_timer.cancel
+
+        # shut down Mondrian Monitor
+        cons = Java::MondrianServer.__send__(:"MonitorImpl$ShutdownCommand").java_class.declared_constructor
+        cons.accessible = true
+        shutdown_command = cons.new_instance.to_java
+
+        cons = Java::MondrianServer.__send__(:"MonitorImpl$Handler").java_class.declared_constructor
+        cons.accessible = true
+        handler = cons.new_instance.to_java
+
+        pair = Java::mondrian.util.Pair.new handler, shutdown_command
+
+        f = Java::MondrianServer::MonitorImpl.java_class.declared_field("ACTOR")
+        f.accessible = true
+        monitor_actor = f.static_value.to_java
+
+        f = monitor_actor.java_class.declared_field("eventQueue")
+        f.accessible = true
+        event_queue = f.value(monitor_actor)
+
+        event_queue.put pair
+
+        # shut down connection pool thread
+        f = Java::mondrian.rolap.RolapConnectionPool.java_class.declared_field("instance")
+        f.accessible = true
+        rolap_connection_pool = f.static_value.to_java
+        f = rolap_connection_pool.java_class.declared_field("mapConnectKeyToPool")
+        f.accessible = true
+        map_connect_key_to_pool = f.value(rolap_connection_pool)
+        map_connect_key_to_pool.values.each do |pool|
+          pool.close if pool && !pool.isClosed
+        end
+
+        true
       end
 
       private
@@ -124,6 +208,9 @@ module Mondrian
           roles = Array(role).map{|r| r && r.to_s.gsub(',', ',,')}.compact
           string << "Role=#{quote_string(roles.join(','))};" unless roles.empty?
         end
+        if locale = @params[:locale]
+          string << "Locale=#{quote_string(locale.to_s)};"
+        end
         string << (@params[:catalog] ? "Catalog=#{catalog_uri}" : "CatalogContent=#{quote_string(catalog_content)}")
       end
 
@@ -132,14 +219,24 @@ module Mondrian
         when 'mysql', 'postgresql'
           uri = "jdbc:#{@driver}://#{@params[:host]}#{@params[:port] && ":#{@params[:port]}"}/#{@params[:database]}"
           uri << "?useUnicode=yes&characterEncoding=UTF-8" if @driver == 'mysql'
+          if (properties = @params[:properties]).is_a?(Hash) && !properties.empty?
+            uri << (@driver == 'mysql' ? '&' : '?')
+            uri << properties.map{|k, v| "#{k}=#{v}"}.join('&')
+          end
           uri
         when 'oracle'
           # connection using TNS alias
           if @params[:database] && !@params[:host] && !@params[:url] && ENV['TNS_ADMIN']
             "jdbc:oracle:thin:@#{@params[:database]}"
           else
-            @params[:url] ||
-            "jdbc:oracle:thin:@#{@params[:host] || 'localhost'}:#{@params[:port] || 1521}:#{@params[:database]}"
+            @params[:url] || begin
+              database = @params[:database]
+              unless database =~ %r{^(:|/)}
+                # assume database is a SID if no colon or slash are supplied (backward-compatibility)
+                database = ":#{database}"
+              end
+              "jdbc:oracle:thin:@#{@params[:host] || 'localhost'}:#{@params[:port] || 1521}#{database}"
+            end
           end
         when 'luciddb'
           uri = "jdbc:luciddb:http://#{@params[:host]}#{@params[:port] && ":#{@params[:port]}"}"

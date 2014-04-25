@@ -47,7 +47,7 @@ module Mondrian
         class_eval <<-RUBY, __FILE__, __LINE__ + 1
           def #{method}(*axis_members)
             raise ArgumentError, "cannot use #{method} method before axis or with_set method" unless @current_set
-            raise ArgumentError, "specify list of members for #{method} method" if axis_members.empty?
+            raise ArgumentError, "specify set of members for #{method} method" if axis_members.empty?
             members = axis_members.length == 1 && axis_members[0].is_a?(Array) ? axis_members[0] : axis_members
             @current_set.replace [:#{method}, @current_set.clone, members]
             self
@@ -57,7 +57,7 @@ module Mondrian
 
       def except(*axis_members)
         raise ArgumentError, "cannot use except method before axis or with_set method" unless @current_set
-        raise ArgumentError, "specify list of members for except method" if axis_members.empty?
+        raise ArgumentError, "specify set of members for except method" if axis_members.empty?
         members = axis_members.length == 1 && axis_members[0].is_a?(Array) ? axis_members[0] : axis_members
         if [:crossjoin, :nonempty_crossjoin].include? @current_set[0]
           @current_set[2] = [:except, @current_set[2], members]
@@ -84,6 +84,19 @@ module Mondrian
         raise ArgumentError, "cannot use filter_nonempty method before axis or with_set method" unless @current_set
         condition = "NOT ISEMPTY(S.CURRENT)"
         @current_set.replace [:filter, @current_set.clone, condition, 'S']
+        self
+      end
+
+      def generate(*axis_members)
+        raise ArgumentError, "cannot use generate method before axis or with_set method" unless @current_set
+        all = if axis_members.last == :all
+          axis_members.pop
+          'ALL'
+        end
+        raise ArgumentError, "specify set of members for generate method" if axis_members.empty?
+        members = axis_members.length == 1 && axis_members[0].is_a?(Array) ? axis_members[0] : axis_members
+        @current_set.replace [:generate, @current_set.clone, members]
+        @current_set << all if all
         self
       end
 
@@ -189,7 +202,15 @@ module Mondrian
         # definition of calculated member
         else
           member_definition = @with.last
-          options = params.last.is_a?(Hash) ? params.pop : nil
+          if params.last.is_a?(Hash)
+            options = params.pop
+            # if formatter does not include . then it should be ruby formatter name
+            if (formatter = options[:cell_formatter]) && !formatter.include?('.')
+              options = options.merge(:cell_formatter => Mondrian::OLAP::Schema::CellFormatter.new(formatter).class_name)
+            end
+          else
+            options = nil
+          end
           raise ArgumentError, "cannot use 'as' method before with_member method" unless member_definition &&
             member_definition[0] == :member && member_definition.length == 2
           raise ArgumentError, "calculated member definition should be single expression" unless params.length == 1
@@ -214,6 +235,16 @@ module Mondrian
         end
       end
 
+      def execute_drill_through(options = {})
+        Error.wrap_native_exception do
+          drill_through_mdx = "DRILLTHROUGH "
+          drill_through_mdx << "MAXROWS #{options[:max_rows]} " if options[:max_rows]
+          drill_through_mdx << to_mdx
+          drill_through_mdx << " RETURN #{Array(options[:return]).join(',')}" if options[:return]
+          @connection.execute_drill_through drill_through_mdx
+        end
+      end
+
       private
 
       # FIXME: keep original order of WITH MEMBER and WITH SET defitions
@@ -226,7 +257,13 @@ module Mondrian
             options = definition[3]
             options_string = ''
             options && options.each do |option, value|
-              options_string << ", #{option.to_s.upcase} = #{quote_value(value)}"
+              option_name = case option
+              when :caption
+                '$caption'
+              else
+                option.to_s.upcase
+              end
+              options_string << ", #{option_name} = #{quote_value(value)}"
             end
             "MEMBER #{member_name} AS #{quote_value(expression)}#{options_string}"
           when :set
@@ -275,6 +312,8 @@ module Mondrian
           when :filter
             as_alias = members[3] ? " AS #{members[3]}" : nil
             "FILTER(#{members_to_mdx(members[1])}#{as_alias}, #{members[2]})"
+          when :generate
+            "GENERATE(#{members_to_mdx(members[1])}, #{members_to_mdx(members[2])}#{members[3] && ", #{members[3]}"})"
           when :order
             "ORDER(#{members_to_mdx(members[1])}, #{expression_to_mdx(members[2])}, #{members[3]})"
           when :top_count, :bottom_count

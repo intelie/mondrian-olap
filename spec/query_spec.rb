@@ -282,6 +282,18 @@ describe "Query" do
       end
     end
 
+    describe "generate" do
+      it "should generate new set" do
+        @query.rows('[Customers].[Country].Members').generate('[Customers].CurrentMember')
+        @query.rows.should == [:generate, ['[Customers].[Country].Members'], ['[Customers].CurrentMember']]
+      end
+
+      it "should generate new set with all option" do
+        @query.rows('[Customers].[Country].Members').generate('[Customers].CurrentMember', :all)
+        @query.rows.should == [:generate, ['[Customers].[Country].Members'], ['[Customers].CurrentMember'], 'ALL']
+      end
+    end
+
     describe "where" do
       it "should accept conditions" do
         @query.where('[Time].[2010].[Q1]', '[Customers].[USA].[CA]').should equal(@query)
@@ -605,14 +617,34 @@ describe "Query" do
           SQL
       end
 
+      it "should return query with generate" do
+        @query.columns('[Measures].[Unit Sales]', '[Measures].[Store Sales]').
+          rows('[Customers].[Country].Members').generate('[Customers].CurrentMember').
+          to_mdx.should be_like <<-SQL
+            SELECT  {[Measures].[Unit Sales], [Measures].[Store Sales]} ON COLUMNS,
+                    GENERATE([Customers].[Country].Members, [Customers].CurrentMember) ON ROWS
+              FROM  [Sales]
+          SQL
+      end
+
+      it "should return query with generate all" do
+        @query.columns('[Measures].[Unit Sales]', '[Measures].[Store Sales]').
+          rows('[Customers].[Country].Members').generate('[Customers].CurrentMember', :all).
+          to_mdx.should be_like <<-SQL
+            SELECT  {[Measures].[Unit Sales], [Measures].[Store Sales]} ON COLUMNS,
+                    GENERATE([Customers].[Country].Members, [Customers].CurrentMember, ALL) ON ROWS
+              FROM  [Sales]
+          SQL
+      end
+
       it "should return query including WITH MEMBER clause" do
         @query.
           with_member('[Measures].[ProfitPct]').
             as('Val((Measures.[Store Sales] - Measures.[Store Cost]) / Measures.[Store Sales])',
-              :solve_order => 1, :format_string => 'Percent').
+              :solve_order => 1, :format_string => 'Percent', :caption => 'Profit %').
           with_member('[Measures].[ProfitValue]').
             as('[Measures].[Store Sales] * [Measures].[ProfitPct]',
-              :solve_order => 2, :format_string => 'Currency').
+              :solve_order => 2, :cell_formatter => 'CurrencyFormatter').
           columns('[Measures].[Unit Sales]', '[Measures].[Store Sales]').
           rows('[Product].children').
           where('[Time].[2010].[Q1]', '[Customers].[USA].[CA]').
@@ -620,10 +652,10 @@ describe "Query" do
             WITH
                MEMBER [Measures].[ProfitPct] AS
                'Val((Measures.[Store Sales] - Measures.[Store Cost]) / Measures.[Store Sales])',
-               SOLVE_ORDER = 1, FORMAT_STRING = 'Percent'
+               SOLVE_ORDER = 1, FORMAT_STRING = 'Percent', $caption = 'Profit %'
                MEMBER [Measures].[ProfitValue] AS
                '[Measures].[Store Sales] * [Measures].[ProfitPct]',
-               SOLVE_ORDER = 2, FORMAT_STRING = 'Currency'
+               SOLVE_ORDER = 2, CELL_FORMATTER = 'rubyobj.Mondrian.OLAP.Schema.CellFormatter.CurrencyFormatterUdf'
             SELECT  {[Measures].[Unit Sales], [Measures].[Store Sales]} ON COLUMNS,
                     [Product].children ON ROWS
               FROM  [Sales]
@@ -719,7 +751,7 @@ describe "Query" do
 
   end
 
-  describe "drill through" do
+  describe "drill through cell" do
     before(:all) do
       @query = @olap.from('Sales')
       @result = @query.columns('[Measures].[Unit Sales]', '[Measures].[Store Sales]').
@@ -786,6 +818,14 @@ describe "Query" do
             String,
             BigDecimal
           ]
+        when 'mssql'
+          [
+            Fixnum, String, Fixnum, Fixnum, Fixnum,
+            String, String, String, String, String, String,
+            String, String, String, BigDecimal,
+            String,
+            BigDecimal
+          ]
         else
           [
             Fixnum, String, Fixnum, Fixnum, Fixnum,
@@ -803,5 +843,88 @@ describe "Query" do
     end
   end
 
+  describe "drill through cell with return" do
+    before(:all) do
+      @query = @olap.from('Sales')
+      @result = @query.columns('[Measures].[Unit Sales]', '[Measures].[Store Sales]').
+        rows('[Product].children').
+        # where('[Time].[2010].[Q1]', '[Customers].[USA].[CA]').
+        where('[Time].[2010].[Q1]').
+        execute
+    end
+
+    it "should return only specified fields in specified order" do
+      @drill_through = @result.drill_through(:row => 0, :column => 0, :return => [
+        '[Time].[Month]',
+        '[Customers].[City]',
+        '[Product].[Product Family]',
+        '[Measures].[Unit Sales]', '[Measures].[Store Sales]'
+      ])
+      @drill_through.column_labels.should == [
+        "Month",
+        "City",
+        "Product Family",
+        "Unit Sales", "Store Sales"
+      ]
+    end
+
+    it "should return only nonempty measures" do
+      @drill_through = @result.drill_through(:row => 0, :column => 0,
+        :return => "[Measures].[Unit Sales], [Measures].[Store Sales]",
+        :nonempty => "[Measures].[Unit Sales]"
+      )
+      @drill_through.column_labels.should == [
+        "Unit Sales", "Store Sales"
+      ]
+      @drill_through.rows.all?{|r| r.any?{|c| c}}.should be_true
+    end
+
+  end
+
+  describe "drill through statement" do
+    before(:all) do
+      @query = @olap.from('Sales').
+        columns('[Measures].[Unit Sales]', '[Measures].[Store Sales]').
+        rows('[Product].children').
+        where('[Time].[2010].[Q1]', '[Customers].[USA].[CA]')
+    end
+
+    it "should return column labels" do
+      @drill_through = @query.execute_drill_through
+      @drill_through.column_labels.should == [
+        "Year", "Quarter", "Month", "Week", "Day",
+        "Product Family", "Product Department", "Product Category", "Product Subcategory", "Brand Name", "Product Name",
+        "State Province", "City", "Name", "Name (Key)",
+        "Gender",
+        "Unit Sales"
+      ]
+    end
+
+    it "should return row values" do
+      @drill_through = @query.execute_drill_through
+      @drill_through.rows.size.should == 15 # number of generated test rows
+    end
+
+    it "should return only specified max rows" do
+      drill_through = @query.execute_drill_through(:max_rows => 10)
+      drill_through.rows.size.should == 10
+    end
+
+    it "should return only specified fields" do
+      @drill_through = @query.execute_drill_through(:return => [
+        '[Time].[Month]',
+        '[Product].[Product Family]',
+        '[Customers].[City]',
+        '[Measures].[Unit Sales]', '[Measures].[Store Sales]'
+      ])
+      @drill_through.column_labels.should == [
+        "Month",
+        "Product Family",
+        "City",
+        "Unit Sales", "Store Sales"
+      ]
+    end
+
+  end
 
 end

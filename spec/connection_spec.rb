@@ -57,6 +57,25 @@ describe "Connection" do
 
   end
 
+  describe "locale" do
+    %w(en en_US de de_DE).each do |locale|
+      it "should set #{locale} locale from connection parameters" do
+        @olap = Mondrian::OLAP::Connection.create(CONNECTION_PARAMS_WITH_CATALOG.merge(:locale => locale))
+        @olap.locale.should == locale
+        @olap = Mondrian::OLAP::Connection.create(CONNECTION_PARAMS_WITH_CATALOG.merge(:locale => locale.to_sym))
+        @olap.locale.should == locale.to_s
+      end
+
+      it "should set #{locale} locale using setter method" do
+        @olap = Mondrian::OLAP::Connection.create(CONNECTION_PARAMS_WITH_CATALOG)
+        @olap.locale = locale
+        @olap.locale.should == locale
+        @olap.locale = locale.to_sym
+        @olap.locale.should == locale.to_s
+      end
+    end
+  end
+
   describe "close" do
     before(:all) do
       @olap = Mondrian::OLAP::Connection.create(CONNECTION_PARAMS_WITH_CATALOG)

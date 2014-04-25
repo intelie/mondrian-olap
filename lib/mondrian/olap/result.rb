@@ -1,4 +1,3 @@
-require 'nokogiri'
 require 'bigdecimal'
 
 module Mondrian
@@ -104,19 +103,21 @@ module Mondrian
         end
       end
 
-      # specify drill through cell position, for example, as
+      # Specify drill through cell position, for example, as
       #   :row => 0, :cell => 1
-      # specify max returned rows with :max_rows parameter
-      def drill_through(position_params = {})
+      # Specify max returned rows with :max_rows parameter
+      # Specify returned fields (as list of MDX levels and measures) with :return parameter
+      # Specify measures which at least one should not be empty (NULL) with :nonempty parameter
+      def drill_through(params = {})
         Error.wrap_native_exception do
           cell_params = []
           axes_count.times do |i|
             axis_symbol = AXIS_SYMBOLS[i]
-            raise ArgumentError, "missing position #{axis_symbol.inspect}" unless axis_position = position_params[axis_symbol]
+            raise ArgumentError, "missing position #{axis_symbol.inspect}" unless axis_position = params[axis_symbol]
             cell_params << Java::JavaLang::Integer.new(axis_position)
           end
           raw_cell = @raw_cell_set.getCell(cell_params)
-          DrillThrough.from_raw_cell(raw_cell, position_params)
+          DrillThrough.from_raw_cell(raw_cell, params)
         end
       end
 
@@ -128,8 +129,9 @@ module Mondrian
           cell_field = raw_cell.java_class.declared_field('cell')
           cell_field.accessible = true
           rolap_cell = cell_field.value(raw_cell)
-          if rolap_cell.canDrillThrough
-            sql_statement = rolap_cell.drillThroughInternal(max_rows, -1, nil, true, nil)
+
+          if params[:return] || rolap_cell.canDrillThrough
+            sql_statement = drill_through_internal(rolap_cell, params)
             raw_result_set = sql_statement.getWrappedResultSet
             new(raw_result_set)
           end
@@ -196,6 +198,191 @@ module Mondrian
 
         def metadata
           @metadata ||= @raw_result_set.getMetaData
+        end
+
+        # modified RolapCell drillThroughInternal method
+        def self.drill_through_internal(rolap_cell, params)
+          max_rows = params[:max_rows] || -1
+
+          result_field = rolap_cell.java_class.declared_field('result')
+          result_field.accessible = true
+          result = result_field.value(rolap_cell)
+
+          sql = generate_drill_through_sql(rolap_cell, result, params)
+
+          # Choose the appropriate scrollability. If we need to start from an
+          # offset row, it is useful that the cursor is scrollable, but not
+          # essential.
+          statement = result.getExecution.getMondrianStatement
+          execution = Java::MondrianServer::Execution.new(statement, 0)
+          connection = statement.getMondrianConnection
+          result_set_type = Java::JavaSql::ResultSet::TYPE_FORWARD_ONLY
+          result_set_concurrency = Java::JavaSql::ResultSet::CONCUR_READ_ONLY
+          schema = statement.getSchema
+          dialect = schema.getDialect
+
+          Java::MondrianRolap::RolapUtil.executeQuery(
+            connection.getDataSource,
+            sql,
+            nil,
+            max_rows,
+            -1, # firstRowOrdinal
+            Java::MondrianRolap::SqlStatement::StatementLocus.new(
+              execution,
+              "RolapCell.drillThrough",
+              "Error in drill through",
+              Java::MondrianServerMonitor::SqlStatementEvent::Purpose::DRILL_THROUGH, 0
+            ),
+            result_set_type,
+            result_set_concurrency,
+            nil
+          )
+        end
+
+        def self.generate_drill_through_sql(rolap_cell, result, params)
+          return_field_names, return_expressions, nonempty_columns = parse_return_fields(result, params)
+
+          sql_non_extended = rolap_cell.getDrillThroughSQL(return_expressions, false)
+          sql_extended = rolap_cell.getDrillThroughSQL(return_expressions, true)
+
+          if sql_non_extended =~ /\Aselect (.*) from (.*) where (.*) order by (.*)\Z/
+            non_extended_from = $2
+            non_extended_where = $3
+          # if drill through total measure with just all members selection
+          elsif sql_non_extended =~ /\Aselect (.*) from (.*)\Z/
+            non_extended_from = $2
+            non_extended_where = "1 = 1" # dummy true condition
+          else
+            raise ArgumentError, "cannot parse drill through SQL: #{sql_non_extended}"
+          end
+
+          if sql_extended =~ /\Aselect (.*) from (.*) where (.*) order by (.*)\Z/
+            extended_select = $1
+            extended_from = $2
+            extended_where = $3
+            extended_order_by = $4
+          # if only measures are selected then there will be no order by
+          elsif sql_extended =~ /\Aselect (.*) from (.*) where (.*)\Z/
+            extended_select = $1
+            extended_from = $2
+            extended_where = $3
+            extended_order_by = ''
+          else
+            raise ArgumentError, "cannot parse drill through SQL: #{sql_extended}"
+          end
+
+          return_column_positions = {}
+
+          if return_field_names && !return_field_names.empty?
+            new_select = extended_select.split(/,\s*/).map do |part|
+              column_name, column_alias = part.split(' as ')
+              field_name = column_alias[1..-2].gsub(' (Key)', '')
+              position = return_field_names.index(field_name) || 9999
+              return_column_positions[column_name] = position
+              [part, position]
+            end.sort_by(&:last).map(&:first).join(', ')
+
+            new_order_by = extended_order_by.split(/,\s*/).map do |part|
+              column_name, asc_desc = part.split(/\s+/)
+              position = return_column_positions[column_name] || 9999
+              [part, position]
+            end.sort_by(&:last).map(&:first).join(', ')
+          else
+            new_select = extended_select
+            new_order_by = extended_order_by
+          end
+
+          new_from_parts = non_extended_from.split(/,\s*/)
+          outer_join_from_parts = extended_from.split(/,\s*/) - new_from_parts
+          where_parts = extended_where.split(' and ')
+
+          # reverse outer_join_from_parts to support dimensions with several table joins
+          # where join with detailed level table should be constructed first
+          outer_join_from_parts.reverse.each do |part|
+            part_elements = part.split(/\s+/)
+            # first is original table, then optional 'as' and the last is alias
+            table_name = part_elements.first
+            table_alias = part_elements.last
+            join_conditions = where_parts.select do |where_part|
+              where_part.include?(" = #{table_alias}.")
+            end
+            outer_join = " left outer join #{part} on (#{join_conditions.join(' and ')})"
+            left_table_alias = join_conditions.first.split('.').first
+
+            if left_table_from_part = new_from_parts.detect{|from_part| from_part.include?(left_table_alias)}
+              left_table_from_part << outer_join
+            else
+              raise ArgumentError, "cannot extract outer join left table #{left_table_alias} in drill through SQL: #{sql_extended}"
+            end
+          end
+
+          new_from = new_from_parts.join(', ')
+
+          new_where = non_extended_where
+          if nonempty_columns && !nonempty_columns.empty?
+            not_null_condition = nonempty_columns.map{|c| "(#{c}) IS NOT NULL"}.join(' OR ')
+            new_where += " AND (#{not_null_condition})"
+          end
+
+          sql = "select #{new_select} from #{new_from} where #{new_where}"
+          sql << " order by #{new_order_by}" unless new_order_by.empty?
+          sql
+        end
+
+        def self.parse_return_fields(result, params)
+          return_field_names = []
+          return_expressions = nil
+          nonempty_columns = []
+
+          if params[:return] || params[:nonempty]
+            rolap_cube = result.getCube
+            schema_reader = rolap_cube.getSchemaReader
+
+            if return_fields = params[:return]
+              return_fields = return_fields.split(/,\s*/) if return_fields.is_a?(String)
+              return_expressions = return_fields.map do |return_field|
+                begin
+                  segment_list = Java::MondrianOlap::Util.parseIdentifier(return_field)
+                  return_field_names << segment_list.to_a.last.name
+                rescue Java::JavaLang::IllegalArgumentException
+                  raise ArgumentError, "invalid return field #{return_field}"
+                end
+
+                level_or_member = schema_reader.lookupCompound rolap_cube, segment_list, false, 0
+
+                case level_or_member
+                when Java::MondrianOlap::Level
+                  Java::MondrianMdx::LevelExpr.new level_or_member
+                when Java::MondrianOlap::Member
+                  raise ArgumentError, "cannot use calculated member #{return_field} as return field" if level_or_member.isCalculated
+                  Java::mondrian.mdx.MemberExpr.new level_or_member
+                else
+                  raise ArgumentError, "return field #{return_field} should be level or measure"
+                end
+              end
+            end
+
+            if nonempty_fields = params[:nonempty]
+              nonempty_fields = nonempty_fields.split(/,\s*/) if nonempty_fields.is_a?(String)
+              nonempty_columns = nonempty_fields.map do |nonempty_field|
+                begin
+                  segment_list = Java::MondrianOlap::Util.parseIdentifier(nonempty_field)
+                rescue Java::JavaLang::IllegalArgumentException
+                  raise ArgumentError, "invalid return field #{return_field}"
+                end
+                member = schema_reader.lookupCompound rolap_cube, segment_list, false, 0
+                if member.is_a? Java::MondrianOlap::Member
+                  raise ArgumentError, "cannot use calculated member #{return_field} as nonempty field" if member.isCalculated
+                  sql_query = member.getStarMeasure.getSqlQuery
+                  member.getStarMeasure.generateExprString(sql_query)
+                else
+                  raise ArgumentError, "nonempty field #{return_field} should be measure"
+                end
+              end
+            end
+          end
+
+          [return_field_names, return_expressions, nonempty_columns]
         end
 
       end

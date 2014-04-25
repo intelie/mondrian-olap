@@ -1,5 +1,20 @@
 module Mondrian
   module OLAP
+    module Annotated
+      private
+
+      def annotations_for(raw_element)
+        @annotations ||= begin
+          annotated = raw_element.unwrap(Java::MondrianOlap::Annotated.java_class)
+          annotations_hash = annotated.getAnnotationMap.to_hash
+          annotations_hash.each do |key, annotation|
+            annotations_hash[key] = annotation.getValue
+          end
+          annotations_hash
+        end
+      end
+    end
+
     class Cube
       def self.get(connection, name)
         if raw_cube = connection.raw_schema.getCubes.get(name)
@@ -20,6 +35,19 @@ module Mondrian
 
       def description
         @description ||= @raw_cube.getDescription
+      end
+
+      def caption
+        @caption ||= @raw_cube.getCaption
+      end
+
+      include Annotated
+      def annotations
+        annotations_for(@raw_cube)
+      end
+
+      def visible?
+        @raw_cube.isVisible
       end
 
       def dimensions
@@ -71,6 +99,10 @@ module Mondrian
         @description ||= @raw_dimension.getDescription
       end
 
+      def caption
+        @caption ||= @raw_dimension.getCaption
+      end
+
       def full_name
         @full_name ||= @raw_dimension.getUniqueName
       end
@@ -102,6 +134,16 @@ module Mondrian
           :standard
         end
       end
+
+      include Annotated
+      def annotations
+        annotations_for(@raw_dimension)
+      end
+
+      def visible?
+        @raw_dimension.isVisible
+      end
+
     end
 
     class Hierarchy
@@ -118,6 +160,10 @@ module Mondrian
 
       def description
         @description ||= @raw_hierarchy.getDescription
+      end
+
+      def caption
+        @caption ||= @raw_hierarchy.getCaption
       end
 
       def levels
@@ -167,6 +213,16 @@ module Mondrian
           parent_member && parent_member.children.map{|m| m.name}
         end
       end
+
+      include Annotated
+      def annotations
+        annotations_for(@raw_hierarchy)
+      end
+
+      def visible?
+        @raw_hierarchy.isVisible
+      end
+
     end
 
     class Level
@@ -187,6 +243,10 @@ module Mondrian
 
       def description
         @description ||= @raw_level.getDescription
+      end
+
+      def caption
+        @caption ||= @raw_level.getCaption
       end
 
       def depth
@@ -222,6 +282,16 @@ module Mondrian
       def all?
         level_type == "ALL"
       end
+
+      include Annotated
+      def annotations
+        annotations_for(@raw_level)
+      end
+
+      def visible?
+        @raw_level.isVisible
+      end
+
     end
 
     class Member
@@ -232,15 +302,15 @@ module Mondrian
       attr_reader :raw_member
 
       def name
-        @raw_member.getName
+        @name ||= @raw_member.getName
       end
 
       def full_name
-        @raw_member.getUniqueName
+        @full_name ||= @raw_member.getUniqueName
       end
 
       def caption
-        @raw_member.getCaption
+        @caption ||= @raw_member.getCaption
       end
 
       def calculated?
@@ -317,6 +387,33 @@ module Mondrian
       def property_formatted_value(name)
         if property = @raw_member.getProperties.get(name)
           @raw_member.getPropertyFormattedValue(property)
+        end
+      end
+
+      include Annotated
+      def annotations
+        annotations_for(@raw_member)
+      end
+
+      def format_string
+        format_exp = property_value('FORMAT_EXP')
+        if format_exp && format_exp =~ /\A"(.*)"\z/
+          format_exp = $1
+        end
+        if format_exp && !format_exp.empty?
+          format_exp
+        end
+      end
+
+      def cell_formatter_name
+        if dimension_type == :measures
+          cube_measure = raw_member.unwrap(Java::MondrianOlap::Member.java_class)
+          if value_formatter = cube_measure.getFormatter
+            f = value_formatter.java_class.declared_field('cf')
+            f.accessible = true
+            cf = f.value(value_formatter)
+            cf.class.name.split('::').last.gsub(/Udf\z/, '')
+          end
         end
       end
 

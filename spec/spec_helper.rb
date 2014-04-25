@@ -1,31 +1,33 @@
-require "rubygems"
-require "bundler"
-Bundler.setup(:default, :development)
-
-$:.unshift(File.dirname(__FILE__) + '/../lib')
-
+require 'rdoc'
 require 'rspec'
 require 'active_record'
+require 'activerecord-jdbc-adapter'
+require 'coffee-script'
+require 'rhino'
 require 'pry'
 
-DATABASE_HOST     = ENV['DATABASE_HOST']     || 'localhost'
-DATABASE_USER     = ENV['DATABASE_USER']     || 'root'
-DATABASE_PASSWORD = ENV['DATABASE_PASSWORD'] || ''
-DATABASE_NAME     = ENV['DATABASE_NAME']     || 'mondrian_test'
-DATABASE_INSTANCE = ENV['DATABASE_INSTANCE']
+# autoload corresponding JDBC driver during require 'jdbc/...'
+Java::JavaLang::System.setProperty("jdbc.driver.autoload", "true")
+
 MONDRIAN_DRIVER   = ENV['MONDRIAN_DRIVER']   || 'mysql'
+env_prefix = MONDRIAN_DRIVER.upcase
+
+DATABASE_HOST     = ENV["#{env_prefix}_DATABASE_HOST"]     || ENV['DATABASE_HOST']     || 'localhost'
+DATABASE_USER     = ENV["#{env_prefix}_DATABASE_USER"]     || ENV['DATABASE_USER']     || 'root'
+DATABASE_PASSWORD = ENV["#{env_prefix}_DATABASE_PASSOWRD"] || ENV['DATABASE_PASSWORD'] || ''
+DATABASE_NAME     = ENV["#{env_prefix}_DATABASE_NAME"]     || ENV['DATABASE_NAME']     || 'mondrian_test'
+DATABASE_INSTANCE = ENV["#{env_prefix}_DATABASE_INSTANCE"] || ENV['DATABASE_INSTANCE']
 
 case MONDRIAN_DRIVER
 when 'mysql'
   require 'jdbc/mysql'
-  Jdbc::MySQL.load_driver(:require) if Jdbc::MySQL.respond_to?(:load_driver)
+  # Jdbc::MySQL.load_driver(:require) if Jdbc::MySQL.respond_to?(:load_driver)
   JDBC_DRIVER = 'com.mysql.jdbc.Driver'
 when 'postgresql'
   require 'jdbc/postgres'
   JDBC_DRIVER = 'org.postgresql.Driver'
 when 'oracle'
   require 'active_record/connection_adapters/oracle_enhanced_adapter'
-  DATABASE_NAME = ENV['DATABASE_NAME'] || 'orcl'
   CATALOG_FILE = File.expand_path('../fixtures/MondrianTestOracle.xml', __FILE__)
 when 'mssql'
   require 'jdbc/jtds'
@@ -66,7 +68,7 @@ end
 puts "==> Using #{MONDRIAN_DRIVER} driver"
 
 require 'mondrian/olap'
-require 'support/matchers/be_like'
+require 'spec/support/matchers/be_like'
 
 RSpec.configure do |config|
   config.include Matchers
@@ -75,6 +77,8 @@ end
 CATALOG_FILE = File.expand_path('../fixtures/MondrianTest.xml', __FILE__) unless defined?(CATALOG_FILE)
 
 CONNECTION_PARAMS = {
+  # uncomment to test PostgreSQL SSL connection
+  # :properties => {'ssl'=>'true','sslfactory'=>'org.postgresql.ssl.NonValidatingFactory'},
   :driver   => MONDRIAN_DRIVER,
   :host     => DATABASE_HOST,
   :database => DATABASE_NAME,
@@ -109,7 +113,8 @@ when 'mssql'
     :driver   => JDBC_DRIVER,
     :url      => url,
     :username => CONNECTION_PARAMS[:username],
-    :password => CONNECTION_PARAMS[:password]
+    :password => CONNECTION_PARAMS[:password],
+    :connection_alive_sql => 'SELECT 1'
   }
 when 'sqlserver'
   url = "jdbc:sqlserver://#{CONNECTION_PARAMS[:host]};databaseName=#{CONNECTION_PARAMS[:database]};"
@@ -119,10 +124,13 @@ when 'sqlserver'
     :driver   => JDBC_DRIVER,
     :url      => url,
     :username => CONNECTION_PARAMS[:username],
-    :password => CONNECTION_PARAMS[:password]
+    :password => CONNECTION_PARAMS[:password],
+    :connection_alive_sql => 'SELECT 1'
   }
 else
   AR_CONNECTION_PARAMS = {
+    # uncomment to test PostgreSQL SSL connection
+    # :properties => CONNECTION_PARAMS[:properties],
     :adapter  => 'jdbc',
     :driver   => JDBC_DRIVER,
     :url      => "jdbc:#{MONDRIAN_DRIVER}://#{CONNECTION_PARAMS[:host]}/#{CONNECTION_PARAMS[:database]}",
